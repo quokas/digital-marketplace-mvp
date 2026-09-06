@@ -1,0 +1,951 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Магазин цифровых товаров для геймеров</title>
+    <style>
+        :root {
+            --bg-color: #0b0e14;
+            --card-bg: #151922;
+            --accent-color: #0073ff;
+            --text-color: #f5f6f7;
+            --text-muted: #8a96a8;
+            --border-color: #222936;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            padding-bottom: 60px;
+        }
+
+        header {
+            background-color: var(--card-bg);
+            border-bottom: 1px solid var(--border-color);
+            padding: 15px 40px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .header-left {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .logo {
+            font-weight: bold;
+            font-size: 20px;
+            color: #fff;
+            cursor: pointer;
+        }
+
+        .catalog-wrapper {
+            position: relative;
+        }
+
+        .catalog-btn {
+            background: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            z-index: 110;
+            position: relative;
+        }
+
+        /* Новое широкое окно каталога по макету */
+        .catalog-wrapper {
+            position: relative;
+        }
+
+        .catalog-btn {
+            background: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            z-index: 110;
+            position: relative;
+        }
+
+        /* Главный контейнер выпадающего меню каталога */
+        .catalog-menu {
+            display: none;
+            position: absolute;
+            top: calc(100% + 12px);
+            left: 0;
+            background: #111622;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+            z-index: 100;
+            width: 900px;
+            /* Широкое окно как в макете */
+            overflow: hidden;
+        }
+
+        .catalog-menu.is-active {
+            display: flex;
+        }
+
+        /* Используем flex для разделения на лево/право */
+
+        /* ЛЕВАЯ ЧАСТЬ: Вертикальное меню основных категорий */
+        .catalog-sidebar {
+            width: 220px;
+            background: #151922;
+            border-right: 1px solid var(--border-color);
+            padding: 15px 0;
+            list-style: none;
+        }
+
+        .catalog-sidebar li {
+            padding: 12px 20px;
+            font-size: 13px;
+            color: var(--text-color);
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            transition: background 0.2s, color 0.2s;
+        }
+
+        .catalog-sidebar li:hover,
+        .catalog-sidebar li.active {
+            background: var(--bg-color);
+            color: var(--accent-color);
+        }
+
+        .catalog-sidebar li::after {
+            content: '›';
+            color: var(--text-muted);
+            font-size: 16px;
+        }
+
+        /* ПРАВАЯ ЧАСТЬ: Сетка с подкатегориями брендов/сервисов */
+        .catalog-content {
+            flex-grow: 1;
+            padding: 25px;
+            background: #111622;
+        }
+
+        .catalog-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            /* 4 колонки брендов рядом + Подборки ниже */
+            gap: 20px;
+        }
+
+        .catalog-column h4 {
+            color: #fff;
+            font-size: 13px;
+            margin-bottom: 10px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .catalog-column h4:hover {
+            color: var(--accent-color);
+        }
+
+        .catalog-column h4::after {
+            content: ' ›';
+            color: var(--text-muted);
+        }
+
+        .catalog-column ul {
+            list-style: none;
+        }
+
+        .catalog-column li {
+            color: var(--text-muted);
+            font-size: 12px;
+            padding: 5px 0;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+
+        .catalog-column li:hover {
+            color: var(--accent-color);
+        }
+
+        /* Горизонтальная линия перед Подборками */
+        .catalog-divider {
+            grid-column: span 4;
+            height: 1px;
+            background: var(--border-color);
+            margin: 10px 0;
+        }
+
+        .currency-select {
+            display: flex;
+            background: var(--bg-color);
+            padding: 4px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+        }
+
+        .curr-btn {
+            background: transparent;
+            color: var(--text-muted);
+            border: none;
+            padding: 6px 14px;
+            cursor: pointer;
+            font-weight: bold;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+
+        .curr-btn.active {
+            background: var(--accent-color);
+            color: white;
+        }
+
+        .carousel-container {
+            padding: 25px 40px 10px 40px;
+        }
+
+        .carousel {
+            background: #000;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            height: 180px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .carousel-btn {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: none;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background 0.2s;
+            z-index: 5;
+            margin: 0 20px;
+        }
+
+        .carousel-btn:hover {
+            background: var(--accent-color);
+        }
+
+        .banner-content {
+            text-align: center;
+            flex-grow: 1;
+        }
+
+        #bannerText {
+            font-size: 24px;
+            font-weight: bold;
+            letter-spacing: 0.5px;
+            color: #fff;
+        }
+
+        .services-container {
+            padding: 15px 40px;
+            display: flex;
+            gap: 12px;
+            overflow-x: auto;
+        }
+
+        .service-item {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            padding: 12px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 14px;
+            white-space: nowrap;
+            transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .service-item:hover {
+            transform: translateY(-2px);
+            border-color: var(--accent-color);
+            box-shadow: 0 5px 15px rgba(0, 115, 255, 0.2);
+        }
+
+        .steam-topup-section {
+            padding: 15px 40px;
+        }
+
+        .steam-box {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            max-width: 600px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 15px;
+        }
+
+        .steam-box h3 {
+            font-size: 16px;
+            white-space: nowrap;
+        }
+
+        .steam-input-group {
+            display: flex;
+            gap: 10px;
+            flex-grow: 1;
+        }
+
+        .steam-input {
+            flex-grow: 1;
+            background: var(--bg-color);
+            border: 1px solid var(--border-color);
+            padding: 10px 14px;
+            border-radius: 6px;
+            color: white;
+            font-size: 14px;
+        }
+
+        .steam-input:focus {
+            border-color: var(--accent-color);
+            outline: none;
+        }
+
+        .main-content {
+            padding: 25px 40px;
+        }
+
+        .section-title {
+            font-size: 20px;
+            margin-bottom: 20px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+
+        .products-grid {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 16px;
+        }
+
+        @media (max-width: 1400px) {
+            .products-grid {
+                grid-template-columns: repeat(4, 1fr);
+            }
+        }
+
+        @media (max-width: 900px) {
+            .products-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            min-height: 240px;
+            transition: box-shadow 0.3s, border-color 0.3s, transform 0.3s;
+        }
+
+        .card-img {
+            width: 100%;
+            height: 120px;
+            object-fit: cover;
+            border-radius: 6px;
+            margin-bottom: 12px;
+            background-color: #0b0e14;
+        }
+
+        .card:hover {
+            transform: translateY(-4px);
+            border-color: #3b485e;
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.5);
+        }
+
+        .card-type {
+            font-size: 10px;
+            text-transform: uppercase;
+            color: var(--accent-color);
+            font-weight: bold;
+            margin-bottom: 6px;
+        }
+
+        .card-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            line-height: 1.4;
+            color: #fff;
+        }
+
+        .card-footer {
+            margin-top: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .card-price {
+            font-size: 16px;
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .buy-btn {
+            background: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 10px;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s;
+            width: 100%;
+            text-align: center;
+            font-size: 13px;
+        }
+
+        .buy-btn:hover {
+            background: #0056cc;
+        }
+
+        .status-overlay {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #1c2331;
+            border: 1px solid var(--accent-color);
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+            max-width: 350px;
+            display: none;
+            z-index: 1000;
+        }
+
+        .status-header {
+            font-weight: bold;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        #keyDisplay {
+            background: #0b0e14;
+            padding: 8px;
+            border-radius: 4px;
+            font-family: monospace;
+            color: #4caf50;
+            font-size: 15px;
+            margin-top: 10px;
+            text-align: center;
+            border: 1px dashed #4caf50;
+        }
+
+        .reviews-section {
+            padding: 20px 40px;
+            border-top: 1px solid var(--border-color);
+            margin-top: 30px;
+        }
+
+        .reviews-grid {
+            display: flex;
+            gap: 20px;
+            margin-top: 15px;
+        }
+
+        .review-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            padding: 15px;
+            border-radius: 8px;
+            flex: 1;
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        .review-author {
+            font-weight: bold;
+            color: #fff;
+            margin-bottom: 5px;
+        }
+
+        footer {
+            text-align: center;
+            padding: 30px;
+            color: var(--text-muted);
+            font-size: 12px;
+            border-top: 1px solid var(--border-color);
+            margin-top: 40px;
+        }
+
+        .footer-socials {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .footer-socials a {
+            display: inline-block;
+            text-decoration: none;
+        }
+
+        .footer-socials img {
+            width: 32px;
+            /* Аккуратный размер иконок */
+            height: 32px;
+            object-fit: contain;
+            transition: transform 0.2s ease, filter 0.2s ease;
+            cursor: pointer;
+        }
+
+        /* Точка 4 ТЗ: Плавное выделение (подсветка и увеличение) при наведении */
+        .footer-socials img:hover {
+            transform: scale(1.15);
+            filter: brightness(1.2) drop-shadow(0 0 8px var(--accent-color));
+        }
+    </style>
+</head>
+
+<body>
+    <!-- ШАПКА -->
+    <header>
+        <div class="header-left">
+            <div class="logo">🎮 GG-SHOP</div>
+            <div class="catalog-wrapper">
+                <button class="catalog-btn" id="catalogBtn">☰ Каталог</button>
+
+                <!-- Двухколоночный каталог -->
+                <div class="catalog-menu" id="catalogMenu">
+
+                    <!-- Левая сторона: Основные категории -->
+                    <ul class="catalog-sidebar">
+                        <li class="active">Игры и игровые сервисы</li>
+                        <li>Игровые ценности</li>
+                        <li>Мобильные игры</li>
+                        <li>Сервисы и соцсети</li>
+                        <li>Программы</li>
+                    </ul>
+
+                    <!-- Правая сторона: Контент категорий (Бренды и Подборки) -->
+                    <div class="catalog-content">
+                        <div class="catalog-grid">
+
+                            <div class="catalog-column">
+                                <h4>Steam</h4>
+                                <ul>
+                                    <li>Игры & DLC</li>
+                                    <li>Пополнение баланса</li>
+                                    <li>Подарочные карты</li>
+                                    <li>Коллекционные карточки</li>
+                                    <li>Смена региона</li>
+                                </ul>
+                            </div>
+
+                            <div class="catalog-column">
+                                <h4>PlayStation</h4>
+                                <ul>
+                                    <li>Игры & DLC</li>
+                                    <li>Пополнение баланса</li>
+                                    <li>Новые аккаунты</li>
+                                    <li>PS Plus</li>
+                                    <li>EA Play</li>
+                                </ul>
+                            </div>
+
+                            <div class="catalog-column">
+                                <h4>Xbox</h4>
+                                <ul>
+                                    <li>Игры & DLC</li>
+                                    <li>Пополнение баланса</li>
+                                    <li>Новые аккаунты</li>
+                                    <li>Xbox Game Pass</li>
+                                    <li>Услуги</li>
+                                </ul>
+                            </div>
+
+                            <div class="catalog-column">
+                                <h4>Nintendo</h4>
+                                <ul>
+                                    <li>Игры & DLC</li>
+                                    <li>Подарочные карты</li>
+                                    <li>Новые аккаунты</li>
+                                    <li>NS Online</li>
+                                </ul>
+                            </div>
+
+                            <!-- Разделительная черта по макету перед блоком Подборки -->
+                            <div class="catalog-divider"></div>
+
+                            <div class="catalog-column">
+                                <h4>Подборки</h4>
+                                <ul>
+                                    <li>Скидки 90%</li>
+                                    <li>Популярные издатели</li>
+                                    <li>Лучшие серии игр</li>
+                                    <li>Steam Deck</li>
+                                    <li>Bundle-наборы</li>
+                                </ul>
+                            </div>
+
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+        <div class="currency-select">
+            <button class="curr-btn active">₽</button>
+            <button class="curr-btn">$</button>
+            <button class="curr-btn">₸</button>
+        </div>
+    </header>
+
+    <!-- Точка 1: Карусель баннеров -->
+    <div class="carousel-container">
+        <div class="carousel">
+            <button class="carousel-btn" id="prevBanner">◀</button>
+            <div class="banner-content">
+                <div id="bannerText">🔥 Пополнение Steam без комиссии — моментально на аккаунт!</div>
+            </div>
+            <button class="carousel-btn" id="nextBanner">▶</button>
+        </div>
+    </div>
+
+    <!-- Точка 4: Ряд игровых сервисов -->
+    <div class="services-container">
+        <div class="service-item">🎮 Steam</div>
+        <div class="service-item">Discord</div>
+        <div class="service-item">PlayStation</div>
+        <div class="service-item">Xbox</div>
+        <div class="service-item">Roblox</div>
+        <div class="service-item">Spotify</div>
+        <div class="service-item">YouTube</div>
+        <div class="service-item">Genshin</div>
+    </div>
+
+    <!-- БЛОК ПОПОЛНЕНИЯ STEAM -->
+    <div class="steam-topup-section">
+        <div class="steam-box">
+            <h3>Пополнение Steam</h3>
+            <div class="steam-input-group">
+                <input type="text" class="steam-input" id="steamLoginInput" placeholder="Введите логин Steam"
+                    value="GamerNode1">
+                <button class="buy-btn" style="width:auto;" onclick="buyProduct('STEAM-TOPUP-500')">Пополнить 500
+                    ₽</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- СЕТКА ТОВАРОВ ИЗ ТЗ -->
+    <main class="main-content">
+        <h2 class="section-title">Популярные товары</h2>
+        <div class="products-grid">
+
+            <!-- Карточка 1: Рабочее пополнение -->
+            <div class="card">
+                <div>
+                    <img src="images/Pubg.png" alt="PUBG Mobile" class="card-img">
+                    <div class="card-type">Пополнение</div>
+                    <div class="card-title">Steam пополнение 500 ₽</div>
+                </div>
+                <div class="card-footer">
+                    <div class="card-price">500 ₽</div>
+                    <button class="buy-btn" onclick="buyProduct('STEAM-TOPUP-500')">Купить</button>
+                </div>
+            </div>
+
+            <!-- Карточка 2: Рабочий ключ -->
+            <div class="card">
+                <div>
+                    <img src="images/Pubg.png" alt="PUBG Mobile" class="card-img">
+                    <div class="card-type">Ключ</div>
+                    <div class="card-title">CS2 Prime Status ключ</div>
+                </div>
+                <div class="card-footer">
+                    <div class="card-price">1 290 ₽</div>
+                    <button class="buy-btn" onclick="buyProduct('KEY-CS2-PRIME')">Купить</button>
+                </div>
+            </div>
+
+            <!-- Карточка 3: Заглушка (нет в наличии) -->
+            <div class="card">
+                <div>
+                    <img src="images/Pubg.png" alt="PUBG Mobile" class="card-img">
+                    <div class="card-type">Ключ</div>
+                    <div class="card-title">GTA V ключ активации</div>
+                </div>
+                <div class="card-footer">
+                    <div class="card-price">1 990 ₽</div>
+                    <button class="buy-btn" style="background:#222936; color:#555; cursor:not-allowed;" disabled>Нет в
+                        наличии</button>
+                </div>
+            </div>
+
+            <!-- Карточка 4: Заглушка (нет в наличии) -->
+            <div class="card">
+                <div>
+                    <img src="images/Pubg.png" alt="PUBG Mobile" class="card-img">
+                    <div class="card-type">Подписка</div>
+                    <div class="card-title">Discord Nitro 1 месяц</div>
+                </div>
+                <div class="card-footer">
+                    <div class="card-price">399 ₽</div>
+                    <button class="buy-btn" style="background:#222936; color:#555; cursor:not-allowed;" disabled>Нет в
+                        наличии</button>
+                </div>
+            </div>
+
+            <!-- Карточка 5: Заглушка (нет в наличии) -->
+            <div class="card">
+                <div>
+                    <img src="images/Pubg.png" alt="PUBG Mobile" class="card-img">
+                    <div class="card-type">Подписка</div>
+                    <div class="card-title">Spotify Premium 1 месяц</div>
+                </div>
+                <div class="card-footer">
+                    <div class="card-price">299 ₽</div>
+                    <button class="buy-btn" style="background:#222936; color:#555; cursor:not-allowed;" disabled>Нет в
+                        наличии</button>
+                </div>
+            </div>
+
+            <!-- Карточка 6: Заглушка (нет в наличии) -->
+            <div class="card">
+                <div>
+                    <img src="images/Pubg.png" alt="PUBG Mobile" class="card-img">
+                    <div class="card-type">Гифт-карта</div>
+                    <div class="card-title">PlayStation Store 1000 ₽</div>
+                </div>
+                <div class="card-footer">
+                    <div class="card-price">1 000 ₽</div>
+                    <button class="buy-btn" style="background:#222936; color:#555; cursor:not-allowed;" disabled>Нет в
+                        наличии</button>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- СЕКЦИЯ ОТЗЫВОВ ИЗ МАКЕТА -->
+    <div class="reviews-section">
+        <h3 class="section-title">Последние отзывы</h3>
+        <div class="reviews-grid">
+            <div class="review-card">
+                <div class="review-author">Алексей К. ★★★★★</div>
+                <div>Все пришло моментально! Буду брать еще пополнение Steam здесь.</div>
+            </div>
+            <div class="review-card">
+                <div class="review-author">Дмитрий М. ★★★★★</div>
+                <div>Ключ от CS2 активировался без проблем, бэкенд пушка.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Плашка статуса заказа -->
+    <div class="status-overlay" id="statusBlock">
+        <div class="status-header">
+            <span>Управление заказом</span>
+            <span style="color: var(--accent-color);" id="orderIdLabel">#...</span>
+        </div>
+        <div style="font-size: 14px; margin: 10px 0 15px 0;">
+            Статус: <span id="orderStatus" style="font-weight: bold; color: var(--accent-color);">created</span>
+        </div>
+
+        <!-- Интерактивные кнопки эмуляции платежки по ТЗ -->
+        <div id="paymentActions" style="display: flex; gap: 10px; margin-bottom: 10px;">
+            <button class="buy-btn" style="background: #28a745;" id="paySuccessBtn">Оплатить (Успех)</button>
+            <button class="buy-btn" style="background: #dc3545;" id="payFailBtn">Оплатить (Ошибка)</button>
+        </div>
+
+        <div id="keyDisplay" style="display: none;"></div>
+    </div>
+
+    <footer>
+    <div class="footer-socials">
+      <a href="#" target="_blank" title="Мы ВКонтакте">
+        <img src="images/vk.svg" alt="VK">
+      </a>
+      <a href="#" target="_blank" title="Наш Telegram">
+        <img src="images/tg.svg" alt="Telegram">
+      </a>
+      <a href="#" target="_blank" title="Мы в TikTok">
+        <img src="images/tiktok.svg" alt="TikTok">
+      </a>
+      <a href="#" target="_blank" title="Наш YouTube">
+        <img src="images/youtube.svg" alt="YouTube">
+      </a>
+    </div>
+    <div>&copy; 2026 PLAY-SHOP Marketplace. Тестовое задание.</div>
+  </footer>
+    <script>
+        // 1. Интерактивная карусель баннеров
+        const banners = [
+            "🔥 Пополнение Steam без комиссии — моментально на аккаунт!",
+            "🎮 Скидки на ключи активации игр до -70% эту неделю!",
+            "💎 Discord Nitro и подписки с гарантией активации."
+        ];
+        let currentBanner = 0;
+        const elText = document.getElementById('bannerText');
+
+        document.getElementById('nextBanner').onclick = () => {
+            currentBanner = (currentBanner + 1) % banners.length;
+            elText.innerText = banners[currentBanner];
+        };
+        document.getElementById('prevBanner').onclick = () => {
+            currentBanner = (currentBanner - 1 + banners.length) % banners.length;
+            elText.innerText = banners[currentBanner];
+        };
+        setInterval(() => document.getElementById('nextBanner').click(), 6000);
+
+        // 2. Выпадающее меню "Каталог" с закрытием по клику мимо
+        const btn = document.getElementById('catalogBtn');
+        const menu = document.getElementById('catalogMenu');
+        btn.onclick = (e) => {
+            e.stopPropagation();
+            menu.classList.toggle('is-active');
+        };
+        document.onclick = () => menu.classList.remove('is-active');
+
+        // 3. Переключатель валют (визуальный интерактив)
+        document.querySelectorAll('.curr-btn').forEach(b => {
+            b.onclick = () => {
+                document.querySelectorAll('.curr-btn').forEach(x => x.classList.remove('active'));
+                b.classList.add('active');
+            };
+        });
+
+        // Взаимодействие с бэкендом (флоу покупки и получения товара)
+        // Глобальная переменная для отслеживания текущего интервала опроса бэкенда
+        let statusInterval = null;
+
+        async function buyProduct(sku) {
+            const statusBlock = document.getElementById('statusBlock');
+            const orderStatus = document.getElementById('orderStatus');
+            const keyDisplay = document.getElementById('keyDisplay');
+            const paymentActions = document.getElementById('paymentActions');
+
+            // Сбрасываем старый интервал, если он работал
+            if (statusInterval) clearInterval(statusInterval);
+
+            statusBlock.style.display = 'block';
+            orderStatus.innerText = 'Создание заказа...';
+            orderStatus.style.color = 'var(--accent-color)';
+            keyDisplay.style.display = 'none';
+            paymentActions.style.display = 'flex'; // Показываем кнопки оплаты
+
+            try {
+                // Шаг 1: Создаем заказ на бэкенде в статусе 'created'
+                const resOrder = await fetch('/api/orders', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sku })
+                });
+                const { order_id } = await resOrder.json();
+                document.getElementById('orderIdLabel').innerText = '#' + order_id;
+                orderStatus.innerText = 'Ожидает оплаты (created)';
+
+                // Шаг 2: Навешиваем логику на кнопку "Оплатить (Успех)"
+                document.getElementById('paySuccessBtn').onclick = async () => {
+                    paymentActions.style.display = 'none'; // Прячем кнопки после клика
+                    orderStatus.innerText = 'Обработка платежа...';
+
+                    // Шлем вебхук имитации успешной оплаты на наш бэкенд
+                    await fetch('/webhook/payment', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            event_id: 'evt_success_' + Math.random().toString(36).substr(2, 9),
+                            order_id: order_id,
+                            status: 'paid'
+                        })
+                    });
+
+                    // Запускаем опрос статуса (Long-polling / Интервал)
+                    startStatusPolling(order_id);
+                };
+
+                // Шаг 3: Навешиваем логику на кнопку "Оплатить (Ошибка)"
+                document.getElementById('payFailBtn').onclick = async () => {
+                    paymentActions.style.display = 'none';
+                    orderStatus.innerText = 'Отмена платежа...';
+
+                    // Шлем вебхук имитации отмены/ошибки оплаты
+                    await fetch('/webhook/payment', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            event_id: 'evt_fail_' + Math.random().toString(36).substr(2, 9),
+                            order_id: order_id,
+                            status: 'failed' // По контракту ТЗ при не-paid бэкенд просто ответит 200
+                        })
+                    });
+
+                    orderStatus.innerText = 'payment_failed (Оплата не прошла)';
+                    orderStatus.style.color = '#dc3545';
+                };
+
+            } catch (err) {
+                orderStatus.innerText = 'Ошибка соединения с сервером';
+                orderStatus.style.color = '#dc3545';
+            }
+        }
+
+        // Функция периодического опроса статуса заказа на бэкенде
+        function startStatusPolling(orderId) {
+            const orderStatus = document.getElementById('orderStatus');
+            const keyDisplay = document.getElementById('keyDisplay');
+
+            statusInterval = setInterval(async () => {
+                const resStatus = await fetch(`/api/orders/${orderId}`);
+                const order = await resStatus.json();
+
+                orderStatus.innerText = order.status;
+
+                if (order.status === 'delivered') {
+                    clearInterval(statusInterval);
+                    orderStatus.innerText = 'Успешно доставлено! 🎉';
+                    orderStatus.style.color = '#28a745';
+                    keyDisplay.innerText = order.key || 'Баланс зачислен';
+                    keyDisplay.style.display = 'block';
+                } else if (order.status === 'out_of_stock' || order.status === 'delivery_failed') {
+                    clearInterval(statusInterval);
+                    orderStatus.style.color = '#dc3545';
+                    orderStatus.innerText = 'Ошибка: Ключи закончились в пуле';
+                }
+            }, 1000);
+        }
+    </script>
+    </script>
+</body>
+
+</html>
