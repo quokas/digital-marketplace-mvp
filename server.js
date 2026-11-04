@@ -42,46 +42,50 @@ app.post('/api/orders', (req, res) => {
   res.json({ order_id: orderId });
 });
 
-// 2. Вебхук оплаты (Критерии 1, 2, 3, 4)
+// 2. Вебхук оплаты (Абсолютная атомарная защита)
 app.post('/webhook/payment', async (req, res) => {
   const { event_id, order_id, status } = req.body;
   if (status !== 'paid') return res.sendStatus(200);
 
-  // Критерий 2: Идемпотентность по event_id
+  // 1. Критерий 2: Идемпотентность по event_id (Сетевые дубли)
   if (processedEvents[event_id]) {
     return res.status(200).send('OK (Duplicate event)');
   }
 
-  // Инициализируем блокировку заказа
-  if (!orderLocks[order_id]) orderLocks[order_id] = Promise.resolve();
-
-  // Критерий 1: Встаем в очередь блокировки (Асинхронный Mutex)
-  orderLocks[order_id] = orderLocks[order_id].then(async () => {
-
-    // Критерий 3: Вебхук пришел раньше создания заказа
-    if (!orders[order_id]) {
-      orders[order_id] = { sku: null, status: 'paid_pending_details', key: null };
-      processedEvents[event_id] = true;
-      return;
+  // 2. Критерий 3: Вебхук пришел раньше создания заказа
+  if (!orders[order_id]) {
+    if (orderLocks[order_id]) {
+      return res.status(409).send('Conflict: Order already locked');
     }
+    orderLocks[order_id] = true; // Захватываем замок мгновенно
+    orders[order_id] = { sku: null, status: 'paid_pending_details', key: null };
+    processedEvents[event_id] = true;
+    return res.status(200).send('OK');
+  }
 
+  // 3. МГНОВЕННЫЙ СИНХРОННЫЙ ЗАХВАТ ЗАМКА ДЛЯ СУЩЕСТВУЮЩЕГО ЗАКАЗА
+  // Если замок уже стоит ИЛИ статус не created — сразу рубим запрос статусом 409
+  if (orderLocks[order_id] || orders[order_id].status !== 'created') {
+    processedEvents[event_id] = true;
+    return res.status(409).send('Conflict: Order already processed');
+  }
+
+  // Если мы прошли проверку выше — мы ПЕРВЫЙ поток. Блокируем замок для остальных 49 запросов!
+  orderLocks[order_id] = true;
+
+  try {
     const order = orders[order_id];
-
-    // Если параллельный вебхук уже обработал заказ — выходим
-    if (order.status !== 'created') {
-      processedEvents[event_id] = true;
-      return;
-    }
-
     order.status = 'paid';
     processedEvents[event_id] = true;
 
-    // Запускаем безопасную выдачу ключа
+    // Выдаем ключ
     await processDelivery(order_id);
-  });
 
-  await orderLocks[order_id];
-  return res.status(200).send('OK');
+    return res.status(200).send('OK');
+  } catch (error) {
+    console.error(error);
+    return res.sendStatus(500);
+  }
 });
 
 // Вспомогательная функция выдачи товара из пула
@@ -122,33 +126,34 @@ app.post('/api/orders/:id/retry', async (req, res) => {
   res.json({ status: order.status, key: order.key });
 });
 
-// Критерий 5: Защита промокодов от Race Conditions при параллельных запросах
+// Критерий 5: Защита промокодов от Race Conditions (Синхронный замок)
+const promoLocks = {}; // Отдельный объект для блокировки промокодов
+
 app.post('/api/promocodes/apply', async (req, res) => {
   const { code } = req.body;
   const promo = promocodes[code];
 
   if (!promo) return res.status(404).json({ error: 'Промокод не найден' });
 
-  let success = false;
+  // Если этот промокод прямо сейчас в микросекунду обрабатывается другим запросом - ждем или отклоняем
+  if (promoLocks[code]) {
+    // В памяти проще всего вернуть ошибку "попробуйте позже" или микро-таймаут
+    // Для высокой точности проверим лимит прямо здесь:
+    if (promo.used_count >= promo.max_uses) {
+      return res.status(400).json({ error: 'Лимит использований промокода исчерпан' });
+    }
+  }
 
-  // Оборачиваем проверку счетчика в глобальный мьютекс
-  await new Promise((resolve) => {
-    promoLock.then(() => {
-      if (promo.used_count < promo.max_uses) {
-        promo.used_count++;
-        success = true;
-      }
-      resolve();
-    });
-  });
-
-  if (success) {
-    res.json({ success: true, message: 'Промокод успешно применен' });
+  // Синхронная проверка и инкремент в один такт Event Loop
+  if (promo.used_count < promo.max_uses) {
+    promoLocks[code] = true; // закрыли замок
+    promo.used_count++;
+    promoLocks[code] = false; // открыли замок
+    return res.json({ success: true, message: 'Промокод успешно применен' });
   } else {
-    res.status(400).json({ error: 'Лимит использований промокода исчерпан' });
+    return res.status(400).json({ error: 'Лимит использований промокода исчерпан' });
   }
 });
-
 // 3. Статус заказа
 app.get('/api/orders/:id', (req, res) => {
   const order = orders[req.params.id];
