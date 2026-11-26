@@ -10,7 +10,7 @@
     "build": "npm --prefix client run build && npm run build:server",
     "start": "node server/dist/main.js",
     "typecheck": "tsc -p server/tsconfig.json --noEmit",
-    "test:integration": "tsx --test server/tests/**/*.test.ts"
+    "test:integration": "tsx --test \"server/tests/**/*.test.ts\""
   },
   "keywords": [],
   "author": "",
