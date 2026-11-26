@@ -1,91 +1,96 @@
 # Digital Marketplace Core: High-Concurrency Payment & Delivery Service
 
-Отказоустойчивый микросервис обработки платежных вебхуков и атомарной выдачи цифровых товаров (ключей, пин-кодов) на **Node.js** и **PostgreSQL**.
+Отказоустойчивый сервис обработки платёжных вебхуков, атомарной выдачи цифровых товаров и гарантированной доставки событий на **TypeScript**, **Node.js** и **PostgreSQL 16**. Проект демонстрирует продакшн-подходы к защите от гонок (Race Conditions), дублей и проблемы двойной записи без внешних блокировок.
 
-Проект демонстрирует продакшн-паттерны защиты финансовой и товарной логики от состояний гонки (**Race Conditions**), сетевых дублей (**Idempotency**) и подделки запросов под высокой конкурентной нагрузкой без использования внешних распределенных блокировок (Redis/Redlock).
+## Архитектура и поток обработки
 
----
+```mermaid
+sequenceDiagram
+    autonumber
+    participant GW as Payment Gateway
+    participant API as Express API (TS)
+    participant UoW as Unit of Work (PG Tx)
+    participant DB as PostgreSQL 16
+    participant W as Outbox Worker
 
-## Архитектурные решения
+    GW->>API: POST /webhook/payment (x-signature, rawBody)
+    API->>API: HMAC-SHA256 (timingSafeEqual) + Zod validation
+    API->>UoW: runInTransaction()
+    UoW->>DB: INSERT INTO processed_webhooks ON CONFLICT DO NOTHING
+    UoW->>DB: SELECT ... FROM orders WHERE id = $1 FOR UPDATE
+    UoW->>DB: SELECT ... FROM digital_keys WHERE order_id IS NULL FOR UPDATE SKIP LOCKED
+    UoW->>DB: UPDATE digital_keys & orders (status = delivered)
+    UoW->>DB: INSERT INTO outbox_events (status = pending)
+    UoW-->>API: COMMIT
+    API-->>GW: 200 OK
+    loop Polling (2s)
+        W->>DB: SELECT ... FROM outbox_events WHERE status = pending FOR UPDATE SKIP LOCKED
+        W->>W: Dispatch event (Email / Broker)
+        W->>DB: UPDATE outbox_events SET status = processed
+    end
+```
 
-1. **Пессимистичные блокировки без дедлоков (`FOR UPDATE SKIP LOCKED`)**
-   При выдаче цифрового ключа транзакция забирает первую свободную строку в таблице `digital_keys`. Конкурирующие потоки не встают в очередь ожидания, а мгновенно перескакивают на следующую свободную запись, обеспечивая максимальную пропускную способность и исключая выдачу одного ключа двум покупателям.
-2. **Двухуровневая защита платежного вебхука**
-   * **Идемпотентность (`ON CONFLICT DO NOTHING`):** Таблица `processed_webhooks` с первичным ключом `event_id` на уровне индекса БД отсекает сетевые дубли одного и того же события от эквайринга, возвращая `200 OK` без повторного списания или выдачи.
-   * **Блокировка заказа (`SELECT ... FOR UPDATE`):** Защищает от фрод-атаки, когда на один заказ одновременно приходят разные транзакции с уникальными `event_id`.
-3. **Атомарные операции вместо мьютексов**
-   Лимит использования промокодов контролируется одним атомарным запросом `UPDATE promocodes SET used_count = used_count + 1 WHERE code = $1 AND used_count < max_uses` с проверкой `CHECK (used_count <= max_uses)` на уровне схемы БД.
-4. **Криптографическая верификация и валидация**
-   * Подпись входящих вебхуков проверяется по сырому телу запроса (`rawBody`) через **HMAC-SHA256** с использованием `crypto.timingSafeEqual` (защита от timing-атак).
-   * Все входящие payload'ы валидируются строгими схемами **Zod**.
-5. **Устойчивость к истощению пула и Graceful Shutdown**
-   При отсутствии свободных ключей заказ переводится в восстанавливаемый статус `out_of_stock` с поддержкой безопасного перезапуска выдачи (`/retry`). Сервер корректно завершает активные соединения и закрывает пул БД по сигналам `SIGTERM` / `SIGINT`.
+## Ключевые инженерные решения
+1. **Слоистая архитектура** на TypeScript с паттерном *Unit of Work* (`TransactionManager`) и иерархией доменных ошибок `DomainError`.
+2. **Пессимистичные блокировки** (`FOR UPDATE SKIP LOCKED`) для высокой пропускной способности при конкурентной выдаче ключей.
+3. **Двухуровневая защита вебхуков**: дедупликация через `ON CONFLICT DO NOTHING` и блокировка заказов через `SELECT ... FOR UPDATE`.
+4. **Transactional Outbox Pattern**: атомарная запись событий в базу с асинхронным фоновым воркером доставки.
+5. **Оптимизация схемы БД**: частичные индексы на `digital_keys` и атомарный контроль промокодов через `CHECK`-ограничения.
+6. **Observability & Resilience**: структурированные JSON-логи (Pino), сквозной `x-request-id`, пробы `/health/live` / `/health/ready` и Graceful Shutdown.
 
----
+Полную структуру проекта, команды быстрого запуска через Docker Compose и подробный список API-эндпоинтов можно найти в исходном репозитории проекта.
+## Структура проекта
 
-## Стек технологий
-
-* **Runtime:** Node.js (Express.js)
-* **Database:** PostgreSQL 16 (`pg` connection pool, ACID-транзакции)
-* **Validation & Security:** Zod, Node `crypto` (HMAC-SHA256)
-* **Infrastructure:** Docker Compose
-
----
+```text
+├── client/                     # React + Vite UI (Витрина, Race Lab, Outbox-монитор)
+├── server/
+│   ├── src/
+│   │   ├── api/                # HTTP-слой: роуты, Zod-валидация, HMAC, Error Handler
+│   │   ├── config/             # Валидация env при старте приложения
+│   │   ├── domain/             # Доменные сущности и типизированные ошибки
+│   │   ├── infrastructure/     # Пул PostgreSQL, Unit of Work, Pino-логгер + ALS
+│   │   ├── repositories/       # Инкапсуляция SQL-запросов
+│   │   ├── services/           # Бизнес-логика (независимая от Express и БД)
+│   │   └── workers/            # Фоновый OutboxWorker
+│   └── tests/                  # Интеграционные тесты на Testcontainers
+├── .github/workflows/ci.yml    # GitHub Actions CI (typecheck + integration tests)
+├── docker-compose.yml          # PostgreSQL 16
+└── schema.sql                  # Схема БД с частичными индексами и CHECK-ограничениями
+```
 
 ## Быстрый запуск
 
-### 1. Подготовка окружения
 ```bash
-git clone https://github.com
-cd digital-marketplace-mvp
-npm install
+# 1. Установка зависимостей (корень + фронтенд)
+npm install && npm --prefix client install
 cp .env.example .env
-```
 
-### 2. Запуск PostgreSQL и накатка схемы
-Контейнер автоматически создаст таблицы и тестовый промокод из `schema.sql`:
-```bash
+# 2. Запуск PostgreSQL 16 и накатка schema.sql
 docker compose up -d
+
+# 3. Запуск в режиме разработки (API на :3000 + Vite UI на :5173)
+npm run dev
 ```
 
-### 3. Запуск сервера и нагрузочного теста
-В первом терминале:
+## Интеграционные тесты (Testcontainers)
+
+Тесты поднимают изолированный контейнер PostgreSQL 16, накатывают схему и прогоняют 50 параллельных потоков на идемпотентность, фрод-атаку и гонку промокодов:
+
 ```bash
-node server.js
+npm run typecheck
+npm run test:integration
 ```
-
-Во втором терминале (прогон 3 стресс-тестов по 50 параллельных запросов):
-```bash
-node test.js
-```
-
----
 
 ## API Эндпоинты
 
 | Метод | Путь | Описание |
 | :--- | :--- | :--- |
-| `POST` | `/api/orders` | Создание заказа (поддерживает клиентский `idempotency_key`) |
-| `GET` | `/api/orders/:id` | Получение статуса заказа и выданного цифрового ключа |
-| `POST` | `/webhook/payment` | Прием платежного вебхука (требует заголовок `x-signature`) |
-| `POST` | `/api/orders/:id/retry` | Повторная выдача ключа для заказов в статусе `out_of_stock` |
-| `POST` | `/api/promocodes/apply` | Атомарное применение промокода с проверкой лимита |
+| `POST` | `/api/orders` | Создание заказа (поддержка `idempotency_key`) |
+| `GET` | `/api/orders/:id` | Статус заказа и выданный цифровой ключ |
+| `POST` | `/api/orders/:id/retry` | Повторная выдача для заказов в статусе `out_of_stock` |
+| `POST` | `/webhook/payment` | Платёжный вебхук (`x-signature` HMAC-SHA256) |
+| `POST` | `/api/promocodes/apply` | Атомарное применение промокода |
 | `POST` | `/api/admin/refill` | Массовое пополнение пула ключей через `UNNEST` |
-
----
-
-## Результаты нагрузочного тестирования (50 параллельных потоков)
-
-```text
-1. Пополняем пул ключей...
-
-Тест 1: Идемпотентность (50 дублей одного вебхука)...
--> 200 OK: 50/50, статус заказа: delivered, ключ: KEY-99F0AE6D
-
-Тест 2: Фрод-атака (50 разных платежей на 1 заказ)...
--> Прошёл: 1, заблокировано (409 Conflict): 49
-
-Тест 3: Гонка промокодов (50 запросов на PROMO3 с лимитом 3)...
--> Применено: 3 из 3, отклонено: 47
-```
-  
+| `GET` | `/api/store/state` | Остатки, промокоды, заказы и очередь Outbox |
+| `GET` | `/health/live` | Liveness-проба процесса |
+| `GET` | `/health/ready` | Readiness-проба подключения к PostgreSQL |

@@ -11,23 +11,35 @@ export default function App() {
   const [promoCode, setPromoCode] = useState('PROMO3');
   const [discountApplied, setDiscountApplied] = useState(false);
   const [activeOrder, setActiveOrder] = useState(null);
-  const [storeState, setStoreState] = useState({ stock: {}, promocodes: [], orders: [] });
+  const [storeState, setStoreState] = useState({ stock: {}, promocodes: [], orders: [], outbox: [] });
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  const addLog = (msg) => setLogs((prev) => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev]);
+  const addLog = (msg, reqId = null) => {
+    const trace = reqId ? ` [req:${reqId.slice(0, 6)}]` : '';
+    setLogs((prev) => [`[${new Date().toLocaleTimeString()}]${trace} ${msg}`, ...prev]);
+  };
 
   const safeJson = async (res) => {
+    const reqId = res.headers.get('x-request-id');
     const text = await res.text();
-    if (!text) throw new Error(`Пустой ответ от сервера (HTTP ${res.status})`);
-    return JSON.parse(text);
+    if (!text) return { data: {}, reqId };
+    return { data: JSON.parse(text), reqId };
   };
+
+  const getErrorMessage = (data, status) =>
+    data?.message || (typeof data?.error === 'string' ? data.error : `HTTP ${status}`);
 
   const refreshState = async () => {
     try {
       const res = await fetch('/api/store/state');
-      const data = await safeJson(res);
-      setStoreState(data);
+      const { data } = await safeJson(res);
+      setStoreState({
+        stock: data.stock ?? {},
+        promocodes: data.promocodes ?? [],
+        orders: data.orders ?? [],
+        outbox: data.outbox ?? [],
+      });
     } catch (e) {
       addLog(`Ошибка синхронизации БД: ${e.message}`);
     }
@@ -44,13 +56,13 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: promoCode }),
       });
-      const data = await safeJson(res);
+      const { data, reqId } = await safeJson(res);
       if (res.ok) {
         setDiscountApplied(true);
-        addLog(`Промокод ${promoCode} применён (${data.promo.used_count}/${data.promo.max_uses})`);
+        addLog(`Промокод ${promoCode} применён (${data.promo.used_count}/${data.promo.max_uses})`, reqId);
         refreshState();
       } else {
-        addLog(`Промокод отклонен: ${data.error}`);
+        addLog(`Промокод отклонен: ${getErrorMessage(data, res.status)}`, reqId);
       }
     } catch (e) {
       addLog(`Ошибка: ${e.message}`);
@@ -65,11 +77,11 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sku, idempotency_key: `ui_${crypto.randomUUID()}` }),
       });
-      const data = await safeJson(res);
-      if (!res.ok) throw new Error(JSON.stringify(data.error));
+      const { data, reqId } = await safeJson(res);
+      if (!res.ok) throw new Error(getErrorMessage(data, res.status));
       setActiveOrder(data);
       setDiscountApplied(false);
-      addLog(`Создан заказ ${data.id.slice(0, 8)}... (${sku})`);
+      addLog(`Создан заказ ${data.id.slice(0, 8)}... (${sku})`, reqId);
       refreshState();
     } catch (e) {
       addLog(`Ошибка: ${e.message}`);
@@ -86,25 +98,32 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ order_id: orderId }),
       });
-      await safeJson(payRes);
-      const updated = await safeJson(await fetch(`/api/orders/${orderId}`));
+      const { data: payData, reqId } = await safeJson(payRes);
+      if (!payRes.ok) throw new Error(getErrorMessage(payData, payRes.status));
+
+      const orderRes = await fetch(`/api/orders/${orderId}`);
+      const { data: updated } = await safeJson(orderRes);
       setActiveOrder(updated);
-      addLog(`Оплата завершена -> статус: ${updated.status}`);
+      addLog(`Оплата завершена -> статус: ${updated.status}`, reqId);
       refreshState();
+
+      setTimeout(() => void refreshState(), 2200);
     } catch (e) {
       addLog(`Ошибка: ${e.message}`);
     } finally {
       setLoading(false);
     }
   };
+
   const retryDelivery = async (orderId) => {
     setLoading(true);
     try {
       const res = await fetch(`/api/orders/${orderId}/retry`, { method: 'POST' });
-      const data = await safeJson(res);
-      if (!res.ok) throw new Error(data.error);
-      addLog(`Повторная выдача (${orderId.slice(0, 8)}): статус ${data.status}`);
+      const { data, reqId } = await safeJson(res);
+      if (!res.ok) throw new Error(getErrorMessage(data, res.status));
+      addLog(`Повторная выдача (${orderId.slice(0, 8)}): статус ${data.status}`, reqId);
       refreshState();
+      setTimeout(() => void refreshState(), 2200);
     } catch (e) {
       addLog(`Ошибка retry: ${e.message}`);
     } finally {
@@ -120,8 +139,8 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sku, keys }),
       });
-      const data = await safeJson(res);
-      addLog(`Админ: добавлено ${data.inserted} ключей для ${sku}`);
+      const { data, reqId } = await safeJson(res);
+      addLog(`Админ: добавлено ${data.inserted} ключей для ${sku}`, reqId);
       refreshState();
     } catch (e) {
       addLog(`Ошибка пополнения: ${e.message}`);
@@ -130,13 +149,14 @@ export default function App() {
 
   const resetPromo = async () => {
     try {
-      await fetch('/api/admin/reset-promo', {
+      const res = await fetch('/api/admin/reset-promo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: 'PROMO3' }),
       });
+      const { reqId } = await safeJson(res);
       setDiscountApplied(false);
-      addLog('Админ: счётчик промокода PROMO3 сброшен в 0/3');
+      addLog('Админ: счётчик промокода PROMO3 сброшен в 0/3', reqId);
       refreshState();
     } catch (e) {
       addLog(`Ошибка сброса: ${e.message}`);
@@ -158,10 +178,12 @@ export default function App() {
       );
       const ok = results.filter((r) => r.status === 200).length;
       const blocked = results.filter((r) => r.status === 409).length;
-      const updated = await safeJson(await fetch(`/api/orders/${orderId}`));
+      const orderRes = await fetch(`/api/orders/${orderId}`);
+      const { data: updated } = await safeJson(orderRes);
       setActiveOrder(updated);
       addLog(`Атака отбита! Прошло: ${ok}, заблокировано (409): ${blocked}. Ключ: ${updated.key || 'нет'}`);
       refreshState();
+      setTimeout(() => void refreshState(), 2200);
     } catch (e) {
       addLog(`Ошибка атаки: ${e.message}`);
     } finally {
@@ -173,13 +195,12 @@ export default function App() {
     navigator.clipboard.writeText(key);
     addLog(`Ключ ${key} скопирован в буфер обмена`);
   };
-
   return (
     <div style={{ maxWidth: 920, margin: '32px auto', fontFamily: 'system-ui, sans-serif', color: '#f1f5f9', padding: '0 16px' }}>
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, borderBottom: '1px solid #1e293b', paddingBottom: 16 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 24 }}>GAMEKEY.CORE</h1>
-          <span style={{ fontSize: 13, color: '#94a3b8' }}>ACID Digital Delivery • PostgreSQL + Node.js</span>
+          <span style={{ fontSize: 13, color: '#94a3b8' }}>TypeScript • Clean Architecture • Transactional Outbox • PostgreSQL</span>
         </div>
         <div style={{ display: 'flex', gap: 8, background: '#0f172a', padding: 6, borderRadius: 12, border: '1px solid #1e293b' }}>
           <button
@@ -196,6 +217,7 @@ export default function App() {
           </button>
         </div>
       </header>
+
       {tab === 'store' ? (
         <div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
@@ -270,6 +292,47 @@ export default function App() {
                         Повторить выдачу (Retry)
                       </button>
                     )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h3 style={{ margin: 0 }}>Transactional Outbox (Очередь событий)</h3>
+            <button
+              onClick={refreshState}
+              style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid #334155', background: '#0f172a', color: '#94a3b8', fontSize: 12, cursor: 'pointer' }}
+            >
+              Обновить
+            </button>
+          </div>
+
+          <div style={{ background: '#0f172a', borderRadius: 12, border: '1px solid #1e293b', overflow: 'hidden', marginBottom: 24 }}>
+            {storeState.outbox.length === 0 ? (
+              <div style={{ padding: 16, color: '#64748b', fontSize: 13 }}>
+                Событий пока нет — оплатите заказ, чтобы увидеть работу Outbox-воркера
+              </div>
+            ) : (
+              storeState.outbox.map((ev) => (
+                <div key={ev.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 18px', borderBottom: '1px solid #1e293b', fontSize: 13 }}>
+                  <div>
+                    <span style={{ fontFamily: 'monospace', color: '#e2e8f0', fontWeight: 600 }}>{ev.event_type}</span>
+                    <span style={{ color: '#64748b', marginLeft: 8 }}>order #{ev.aggregate_id.slice(0, 8)}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ color: '#64748b', fontSize: 12 }}>попыток: {ev.attempts}</span>
+                    <span
+                      style={{
+                        padding: '3px 10px',
+                        borderRadius: 20,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        background: ev.status === 'processed' ? '#064e3b' : ev.status === 'pending' ? '#451a03' : '#7f1d1d',
+                        color: ev.status === 'processed' ? '#6ee7b7' : ev.status === 'pending' ? '#fcd34d' : '#fca5a5',
+                      }}
+                    >
+                      {ev.status}
+                    </span>
                   </div>
                 </div>
               ))
